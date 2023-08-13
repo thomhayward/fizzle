@@ -1,0 +1,6 @@
+[workspace]
+members = [
+  "fizzle",
+  "influxdb",
+  "tasmota"
+]
