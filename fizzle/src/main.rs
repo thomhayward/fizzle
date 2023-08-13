@@ -1,4 +1,5 @@
 use clap::Parser;
+use config::Config;
 use fizzle::{
 	impulse::{Impulse, ImpulseContext},
 	smartplugs::{topic::HomeTasmotaTopicScheme, SmartPlugSwarm},
@@ -6,34 +7,17 @@ use fizzle::{
 };
 use influxdb::util::stdout_buffered_client;
 use rumqttc::Publish;
-use std::error;
+use std::{error, fs::File, io::Read, path::PathBuf};
 use time::util::local_offset::Soundness;
 use tokio::sync::{mpsc, watch};
 
+mod config;
 mod tasks;
 
 #[derive(Parser)]
 pub struct Arguments {
-	#[clap(short, long, env = "MQTT_URL")]
-	mqtt: String,
-
-	#[clap(long, env = "FIZZLE_DISPLAY_TOPIC")]
-	display_topic: Option<String>,
-
-	#[clap(long, env = "INFLUXDB_HOST")]
-	influxdb_host: Option<String>,
-
-	#[clap(long, env = "INFLUXDB_ORG")]
-	influxdb_org: Option<String>,
-
-	#[clap(long, env = "INFLUXDB_BUCKET")]
-	influxdb_bucket: Option<String>,
-
-	#[clap(long, env = "INFLUXDB_TOKEN")]
-	influxdb_token: Option<String>,
-
-	#[clap(long, default_value = "60")]
-	influxdb_interval: u64,
+	#[clap(env = "FIZZLE_CONFIG_PATH")]
+	config: PathBuf,
 }
 
 #[tokio::main]
@@ -55,23 +39,26 @@ async fn main() -> Result<(), Box<dyn error::Error + 'static>> {
 
 	let arguments = Arguments::parse();
 
-	let (writer, influxdb_task) = if let (Some(host), Some(token), Some(bucket), Some(org)) = (
-		&arguments.influxdb_host,
-		&arguments.influxdb_token,
-		&arguments.influxdb_bucket,
-		&arguments.influxdb_org,
-	) {
-		let client = influxdb::Client::new(host, token)?;
-		client
-			.write_to_bucket(bucket)
-			.org(org)
-			.precision(influxdb::Precision::Milliseconds)
-			.build()
-			.buffered()
+	// Read the configuration
+	let mut config_file = File::open(arguments.config)?;
+	let mut config = String::new();
+	config_file.read_to_string(&mut config)?;
+	let config: Config = serde_yaml::from_str(&config)?;
+
+	let (writer, influxdb_task) = if let Some(influxdb_config) = config.influxdb {
+		let client = influxdb::Client::new(influxdb_config.host, influxdb_config.token)?;
+		let mut write_builder = client.write_to_bucket(influxdb_config.bucket);
+		if let Some(org_id) = influxdb_config.org_id {
+			write_builder = write_builder.org(org_id);
+		}
+		if let Some(org) = influxdb_config.org {
+			write_builder = write_builder.org(org);
+		}
+		write_builder.build().buffered()
 	} else {
 		stdout_buffered_client()
 	};
-
+	
 	writer
 		.write_with(|builder| {
 			builder
@@ -83,7 +70,7 @@ async fn main() -> Result<(), Box<dyn error::Error + 'static>> {
 		.await?;
 
 	let mqtt_options = rumqttc::MqttOptions::parse_url(
-		tasks::mqtt::force_mqtt_client(&arguments.mqtt, "fizzle")?.as_str(),
+		tasks::mqtt::force_mqtt_client(&config.mqtt.as_str(), "fizzle")?.as_str(),
 	)?;
 
 	let mut impulse_context: Option<ImpulseContext> = None;
@@ -111,7 +98,7 @@ async fn main() -> Result<(), Box<dyn error::Error + 'static>> {
 	//
 	tasks::display::create_task(
 		client.clone(),
-		arguments.display_topic,
+		config.display_topic.map(String::from),
 		impulse_rx,
 		shutdown_rx.clone(),
 	);
