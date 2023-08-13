@@ -58,7 +58,7 @@ async fn main() -> Result<(), Box<dyn error::Error + 'static>> {
 	} else {
 		stdout_buffered_client()
 	};
-	
+
 	writer
 		.write_with(|builder| {
 			builder
@@ -70,7 +70,7 @@ async fn main() -> Result<(), Box<dyn error::Error + 'static>> {
 		.await?;
 
 	let mqtt_options = rumqttc::MqttOptions::parse_url(
-		tasks::mqtt::force_mqtt_client(&config.mqtt.as_str(), "fizzle")?.as_str(),
+		tasks::mqtt::force_mqtt_client(config.mqtt.as_str(), "fizzle")?.as_str(),
 	)?;
 
 	let mut impulse_context: Option<ImpulseContext> = None;

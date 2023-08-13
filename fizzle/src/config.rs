@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use serde::Deserialize;
 use url::Url;
 
@@ -10,7 +8,7 @@ pub struct Config<'a> {
 	#[serde(borrow = "'a")]
 	pub influxdb: Option<InfluxConfig<'a>>,
 
-  pub display_topic: Option<&'a str>,
+	pub display_topic: Option<&'a str>,
 }
 
 #[derive(Debug, Deserialize)]
