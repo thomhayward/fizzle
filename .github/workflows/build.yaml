@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - main
+      - config
 
 env:
   REGISTRY: ghcr.io
