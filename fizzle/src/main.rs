@@ -47,7 +47,9 @@ async fn main() -> Result<(), Box<dyn error::Error + 'static>> {
 
 	let (writer, influxdb_task) = if let Some(influxdb_config) = config.influxdb {
 		let client = influxdb::Client::new(influxdb_config.host, influxdb_config.token)?;
-		let mut write_builder = client.write_to_bucket(influxdb_config.bucket);
+		let mut write_builder = client
+			.write_to_bucket(influxdb_config.bucket)
+			.precision(influxdb::Precision::Milliseconds);
 		if let Some(org_id) = influxdb_config.org_id {
 			write_builder = write_builder.org(org_id);
 		}
