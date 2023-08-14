@@ -172,7 +172,7 @@ impl<G: TopicGenerator> SmartPlug<G> {
 			power: sensor.energy.power as i64,
 			power_factor: sensor.energy.power_factor as f64,
 			reactive_power: sensor.energy.reactive_power as i64,
-			state: state.power.clone(),
+			state: state.power_state,
 			voltage: sensor.energy.voltage as i64,
 			timestamp,
 		})

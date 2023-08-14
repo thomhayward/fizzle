@@ -8,7 +8,7 @@ pub struct StatusSTS {
 	#[serde(rename = "Time", with = "crate::datetime")]
 	pub time: PrimitiveDateTime,
 	#[serde(rename = "POWER")]
-	pub power: PowerState,
+	pub power_state: PowerState,
 	/// Length of time the device has been running.
 	#[serde(rename = "Uptime")]
 	pub uptime: String,
