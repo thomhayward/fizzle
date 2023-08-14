@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{borrow::Cow, fmt};
+use std::{borrow::Cow, error::Error, fmt};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "UPPERCASE")]
@@ -23,6 +23,8 @@ impl<'a> fmt::Display for UnknownPowerStateLiteral<'a> {
 		write!(f, "Unknown literal for PowerState: {literal}")
 	}
 }
+
+impl Error for UnknownPowerStateLiteral<'_> {}
 
 impl<'a> TryFrom<&'a str> for PowerState {
 	type Error = UnknownPowerStateLiteral<'a>;
