@@ -7,7 +7,6 @@ edition = "2021"
 anyhow = "1"
 bytes = "1.4"
 clap = { version = "4.3", features = ["derive", "env"] }
-dotenvy = "0.15"
 influxdb = { version = "0.1", path = "../influxdb" }
 regex = "1.9"
 rumqttc = { version = "0.22", features = ["url"] }

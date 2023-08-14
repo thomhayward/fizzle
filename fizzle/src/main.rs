@@ -31,12 +31,6 @@ async fn main() -> Result<(), Box<dyn error::Error + 'static>> {
 		time::util::local_offset::set_soundness(Soundness::Unsound);
 	}
 
-	// Load environment variables from .env file if this is a debug build.
-	#[cfg(debug_assertions)]
-	if dotenvy::dotenv().is_err() {
-		tracing::warn!("could not load '.env' file");
-	};
-
 	let arguments = Arguments::parse();
 
 	// Read the configuration
