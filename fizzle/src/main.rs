@@ -6,10 +6,10 @@ use fizzle::{
 	util::{parse_json_payload, timestamp_ms},
 };
 use influxdb::util::stdout_buffered_client;
-use rumqttc::Publish;
-use std::{error, fs::File, io::Read, path::PathBuf};
+use mqtt::clients::tokio::{tcp_client, Options};
+use std::{fs::File, io::Read, path::PathBuf};
 use time::util::local_offset::Soundness;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::watch;
 
 mod config;
 mod tasks;
@@ -21,7 +21,7 @@ pub struct Arguments {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn error::Error + 'static>> {
+async fn main() -> anyhow::Result<()> {
 	tracing_subscriber::fmt::init();
 
 	unsafe {
@@ -65,37 +65,26 @@ async fn main() -> Result<(), Box<dyn error::Error + 'static>> {
 		})
 		.await?;
 
-	let mqtt_options = rumqttc::MqttOptions::parse_url(
-		tasks::mqtt::force_mqtt_client(config.mqtt.as_str(), "fizzle")?.as_str(),
-	)?;
-
 	let mut impulse_context: Option<ImpulseContext> = None;
 
 	let (shutdown_tx, shutdown_rx) = watch::channel(false);
-	let (impulse_raw_tx, mut impulse_raw_rx) = mpsc::channel::<Publish>(64);
-	let (impulse_tx, impulse_rx) = mpsc::channel::<Publish>(64);
-	let (tasmota_tx, mut tasmota_rx) = mpsc::channel::<Publish>(64);
 
 	// Spawn a task to handle incoming MQTT messages
 	//
-	let (client, event_loop) = rumqttc::AsyncClient::new(mqtt_options, 128);
-	let mqtt_task = tokio::spawn(tasks::mqtt::start_task(
-		client.clone(),
-		event_loop,
-		tasks::mqtt::Channels {
-			impulse_raw_tx,
-			impulse_tx,
-			tasmota_tx,
-		},
-		shutdown_rx.clone(),
-	));
+	let options = Options {
+		host: "mqtt.tjh.dev".into(),
+		tls: false,
+		..Default::default()
+	};
+	let (client, handle) = tcp_client(options);
+	let mut impulse_raw_rx = client.subscribe("meter-reader/impulse/raw", 64).await?;
+	let mut tasmota_rx = client.subscribe("tasmota/tele/#", 64).await?;
 
 	// Spawn a task to drive the character display device
 	//
-	tasks::display::create_task(
+	let display_task = tasks::display::create_task(
 		client.clone(),
 		config.display_topic.map(String::from),
-		impulse_rx,
 		shutdown_rx.clone(),
 	);
 
@@ -125,11 +114,9 @@ async fn main() -> Result<(), Box<dyn error::Error + 'static>> {
 					context.offset = context.previous_count;
 				}
 
-
-					writer
-						.write_with(context.write_line_protocol_with(&payload, &timestamp_ms()))
-						.await?;
-
+				writer
+					.write_with(context.write_line_protocol_with(&payload, &timestamp_ms()))
+					.await?;
 
 				// Update the count
 				context.previous_count = payload.impulse_count.into();
@@ -151,8 +138,11 @@ async fn main() -> Result<(), Box<dyn error::Error + 'static>> {
 	drop(swarm);
 	drop(writer);
 
-	mqtt_task.await??;
 	influxdb_task.await??;
+	display_task.await??;
+
+	client.disconnect().await?;
+	let _ = handle.await?;
 
 	Ok(())
 }
