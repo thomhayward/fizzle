@@ -1,11 +1,11 @@
 use bytes::{Buf, Bytes};
-use rumqttc::Publish;
+use mqtt::clients::tokio::Message;
 use time::OffsetDateTime;
 
 pub fn parse_json_payload<T: serde::de::DeserializeOwned>(
-	message: Publish,
+	message: Message,
 ) -> serde_json::Result<T> {
-	let topic = &message.topic;
+	let topic = message.topic;
 	let reader = message.payload.reader();
 	match serde_json::from_reader(reader) {
 		Ok(v) => Ok(v),

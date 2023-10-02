@@ -22,10 +22,7 @@ impl Client {
 	/// Returns an error if the URL is invalid, or the token does not serialize
 	/// to a valid header value.
 	///
-	pub fn new(
-		host: impl IntoUrl,
-		token: impl AsRef<str>,
-	) -> Result<Self, Box<dyn std::error::Error + 'static>> {
+	pub fn new(host: impl IntoUrl, token: impl AsRef<str>) -> anyhow::Result<Self> {
 		let host = host.into_url()?;
 		let token = token.as_ref();
 

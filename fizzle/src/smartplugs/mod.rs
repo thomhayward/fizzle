@@ -4,6 +4,7 @@ pub mod topic;
 use self::topic::{TelemetryType, TopicGenerator};
 use crate::util::{bytes_to_string, parse_json_payload};
 use influxdb::buffered;
+use mqtt::clients::tokio::Message;
 pub use smartplug::SmartPlug;
 use std::{collections::BTreeMap, error, fmt};
 use tasmota::{sns::StatusSNS, PowerState, StatusSTS};
@@ -54,10 +55,10 @@ impl<G: TopicGenerator + fmt::Debug> SmartPlugSwarm<G> {
 
 	pub async fn handle_telemetry(
 		&mut self,
-		message: rumqttc::Publish,
+		message: Message,
 	) -> Result<(), Box<dyn error::Error + 'static>> {
 		//
-		let topic = &message.topic.clone();
+		let topic = message.topic.as_str();
 		let mut smartplug_name = self.telemetry_map.get(topic).map(|s| s.as_str());
 		if smartplug_name.is_none() {
 			tracing::warn!("handling telemetry from unknown topic: {topic}");
@@ -73,14 +74,17 @@ impl<G: TopicGenerator + fmt::Debug> SmartPlugSwarm<G> {
 		}
 
 		let Some(smartplug_name) = smartplug_name else {
-      tracing::error!("received telemetry for unknown topic: {}", topic);
-      return Err("unknown topic".into());
-    };
+			tracing::error!("received telemetry for unknown topic: {}", topic);
+			return Err("unknown topic".into());
+		};
 
 		let Some(smartplug) = self.smartplugs.get_mut(smartplug_name) else {
-      tracing::error!("received telemetry for unknown smartplug: {}", smartplug_name);
-      return Ok(());
-    };
+			tracing::error!(
+				"received telemetry for unknown smartplug: {}",
+				smartplug_name
+			);
+			return Ok(());
+		};
 
 		match G::telemetry_type(topic) {
 			Some(TelemetryType::Sensor) => {
@@ -93,7 +97,7 @@ impl<G: TopicGenerator + fmt::Debug> SmartPlugSwarm<G> {
 			}
 			Some(TelemetryType::Lwt) => {
 				// The Tasmota LWT payload is just a string.
-				let lwt = bytes_to_string(message.payload)?;
+				let lwt = bytes_to_string(message.payload.clone())?;
 				smartplug.set_lwt(lwt);
 			}
 			None => {
