@@ -1,4 +1,5 @@
 mod client;
+pub mod query;
 pub mod util;
 pub mod write;
 

@@ -2,5 +2,6 @@
 members = [
   "fizzle",
   "influxdb",
-  "tasmota"
+  "tasmota",
+  "yesterday"
 ]

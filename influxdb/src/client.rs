@@ -1,4 +1,4 @@
-use crate::write::builder::Builder;
+use crate::{query::QueryClient, write::builder::Builder};
 use reqwest::{
 	header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE},
 	ClientBuilder, IntoUrl,
@@ -54,8 +54,14 @@ impl Client {
 		Builder::new_with(self.client.clone(), self.host.clone(), bucket.into())
 	}
 
-	pub fn query(&self) {
-		unimplemented!()
+	pub fn query_client(&self) -> QueryClient {
+		let mut url = self.host.clone();
+		url.set_path("/api/v2/query");
+
+		QueryClient {
+			client: self.client.clone(),
+			url,
+		}
 	}
 
 	/// Returns the URL of the InfluxDB host.

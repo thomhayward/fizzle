@@ -27,7 +27,7 @@ async fn main() -> anyhow::Result<()> {
 	unsafe {
 		// Hypothetical unsoundness be damned!
 		//
-		// SAFETY: We do not modify our own environment so this _might_ be OK?.
+		// SAFETY: We do not modify our own environment so this is OK.
 		time::util::local_offset::set_soundness(Soundness::Unsound);
 	}
 
@@ -39,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
 	config_file.read_to_string(&mut config)?;
 	let config: Config = serde_yaml::from_str(&config)?;
 
-	let (writer, influxdb_task) = if let Some(influxdb_config) = config.influxdb {
+	let (query_client, writer, influxdb_task) = if let Some(influxdb_config) = config.influxdb {
 		let client = influxdb::Client::new(influxdb_config.host, influxdb_config.token)?;
 		let mut write_builder = client
 			.write_to_bucket(influxdb_config.bucket)
@@ -50,9 +50,16 @@ async fn main() -> anyhow::Result<()> {
 		if let Some(org) = influxdb_config.org {
 			write_builder = write_builder.org(org);
 		}
-		write_builder.build().buffered()
+		// let (writer, task) = write_builder.build().buffered();
+		let (writer, task) = stdout_buffered_client();
+		(
+			Some(client.query_client().org(influxdb_config.org.unwrap())),
+			writer,
+			task,
+		)
 	} else {
-		stdout_buffered_client()
+		let (writer, task) = stdout_buffered_client();
+		(None, writer, task)
 	};
 
 	writer
@@ -84,6 +91,7 @@ async fn main() -> anyhow::Result<()> {
 	//
 	let display_task = tasks::display::create_task(
 		client.clone(),
+		query_client,
 		config.display_topic.map(String::from),
 		shutdown_rx.clone(),
 	);
@@ -146,3 +154,15 @@ async fn main() -> anyhow::Result<()> {
 
 	Ok(())
 }
+/*
+
+from(bucket: "fizzle-dev")
+  |> range(start: 2023-10-02T00:00:00+01:00, stop: 2023-10-03T00:00:00+01:00)
+  |> filter(fn: (r) => r["_measurement"] == "impulse")
+  |> filter(fn: (r) => r["_field"] == "energy")
+  |> filter(fn: (r) => r["device"] == "garage/meter")
+  |> increase()
+  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)
+  |> yield(name: "mean")
+
+*/
