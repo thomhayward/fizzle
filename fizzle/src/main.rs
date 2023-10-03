@@ -32,6 +32,7 @@ async fn main() -> anyhow::Result<()> {
 	}
 
 	let arguments = Arguments::parse();
+	let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
 	// Read the configuration
 	let mut config_file = File::open(arguments.config)?;
@@ -50,8 +51,8 @@ async fn main() -> anyhow::Result<()> {
 		if let Some(org) = influxdb_config.org {
 			write_builder = write_builder.org(org);
 		}
-		// let (writer, task) = write_builder.build().buffered();
-		let (writer, task) = stdout_buffered_client();
+		let (writer, task) = write_builder.build().buffered(shutdown_rx.clone());
+		// let (writer, task) = stdout_buffered_client();
 		(
 			Some(client.query_client().org(influxdb_config.org.unwrap())),
 			writer,
@@ -73,8 +74,6 @@ async fn main() -> anyhow::Result<()> {
 		.await?;
 
 	let mut impulse_context: Option<ImpulseContext> = None;
-
-	let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
 	// Spawn a task to handle incoming MQTT messages
 	//

@@ -74,6 +74,7 @@ impl Drop for Client {
 pub async fn buffered_write_task(
 	client: immediate::Client,
 	mut channel: mpsc::Receiver<(Bytes, watch::Sender<Status>)>,
+	mut shutdown_signal: watch::Receiver<bool>,
 	options: Options,
 ) -> anyhow::Result<()> {
 	let mut shutdown = false;
@@ -112,6 +113,11 @@ pub async fn buffered_write_task(
 						true
 					}
 				}
+			}
+			_ = shutdown_signal.changed() => {
+				//
+				shutdown = true;
+				true
 			}
 			_ = flush_interval.tick() => {
 				!buffers.is_empty()

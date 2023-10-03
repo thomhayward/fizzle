@@ -55,7 +55,7 @@ pub async fn start_task(
 	let mut impulses = client.subscribe("meter-reader/impulse", 64).await?;
 	let mut buttons = client.subscribe("fizzle/meter-display/button/+", 1).await?;
 
-	let mut yesterdays_data: Arc<RwLock<Option<(Date, Vec<Record>)>>> = Default::default();
+	let yesterdays_data: Arc<RwLock<Option<(Date, Vec<Record>)>>> = Default::default();
 
 	loop {
 		if let Some(query_client) = query_client.as_ref() {

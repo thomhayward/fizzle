@@ -1,7 +1,10 @@
 use std::{borrow, fmt};
 
 use bytes::BytesMut;
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::{
+	sync::{mpsc, watch},
+	task::JoinHandle,
+};
 
 use super::{buffered, LineBuilder, LINE_PROTOCOL_BUFFER_LEN};
 
@@ -67,17 +70,26 @@ impl Client {
 	}
 
 	/// Creates a buffered client with the default options.
-	pub fn buffered(self) -> (buffered::Client, JoinHandle<anyhow::Result<()>>) {
-		self.buffered_with(Default::default())
+	pub fn buffered(
+		self,
+		shutdown_signal: watch::Receiver<bool>,
+	) -> (buffered::Client, JoinHandle<anyhow::Result<()>>) {
+		self.buffered_with(shutdown_signal, Default::default())
 	}
 
 	pub fn buffered_with(
 		self,
+		shutdown_signal: watch::Receiver<bool>,
 		options: buffered::Options,
 	) -> (buffered::Client, JoinHandle<anyhow::Result<()>>) {
 		let (tx, rx) = mpsc::channel(options.channel_len);
 
-		let handle = tokio::spawn(buffered::buffered_write_task(self, rx, options));
+		let handle = tokio::spawn(buffered::buffered_write_task(
+			self,
+			rx,
+			shutdown_signal,
+			options,
+		));
 		let client = buffered::Client::new(tx);
 
 		(client, handle)
