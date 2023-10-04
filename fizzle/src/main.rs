@@ -3,13 +3,12 @@ mod tasks;
 
 use clap::Parser;
 use config::Config;
-use fizzle::{
-	impulse::{Impulse, ImpulseContext},
-	smartplugs::{topic::HomeTasmotaTopicScheme, SmartPlugSwarm},
-	util::{parse_json_payload, timestamp_ms},
-};
+use fizzle::smartplugs::{topic::HomeTasmotaTopicScheme, SmartPlugSwarm};
 use influxdb::{util::stdout_buffered_client, Client as InfluxDbClient, Precision};
-use mqtt::clients::tokio::{tcp_client, Options};
+use mqtt::{
+	clients::tokio::{tcp_client, Options},
+	FilterBuf,
+};
 use std::{
 	fs::File,
 	path::{Path, PathBuf},
@@ -65,8 +64,6 @@ async fn main() -> anyhow::Result<()> {
 		})
 		.await?;
 
-	let mut impulse_context: Option<ImpulseContext> = None;
-
 	// Spawn a task to handle incoming MQTT messages
 	//
 	let options = Options {
@@ -80,10 +77,13 @@ async fn main() -> anyhow::Result<()> {
 	};
 	let (mqtt_client, handle) = tcp_client(options);
 
-	let mut impulse_raw_rx = mqtt_client
-		.subscribe("meter-reader/impulse/raw", 64)
-		.await?;
-	let mut tasmota_rx = mqtt_client.subscribe("tasmota/tele/#", 64).await?;
+	// Spawn the smart-meter task.
+	//
+	let smart_meter_task = tokio::spawn(tasks::smart_meter::smart_meter_task(
+		mqtt_client.clone(),
+		write_client.clone(),
+		FilterBuf::new("meter-reader/impulse/raw")?,
+	));
 
 	// Spawn a task to drive the character display device
 	//
@@ -95,39 +95,12 @@ async fn main() -> anyhow::Result<()> {
 	);
 
 	// Create the smart plug swarm!
+	let mut tasmota_rx = mqtt_client.subscribe("tasmota/tele/#", 64).await?;
 	let mut swarm: SmartPlugSwarm<HomeTasmotaTopicScheme> =
 		SmartPlugSwarm::new(write_client.clone());
 
 	loop {
 		tokio::select! {
-			// "Smart" Meter Impulse Messages
-			Some(message) = impulse_raw_rx.recv() => {
-				// Parse the payload as an Impulse object.
-				let payload: Impulse = match parse_json_payload(message) {
-					Ok(payload) => payload,
-					Err(error) => {
-						tracing::error!("error parsing impulse payload: {error:?}");
-						continue;
-					}
-				};
-
-				let context = impulse_context
-					.get_or_insert_with(||
-						ImpulseContext::with_initial_count(payload.impulse_count as i64)
-					);
-
-				if (payload.impulse_count as i64) < context.previous_count {
-					tracing::info!("impulse counter reset detected, adjusting offset");
-					context.offset = context.previous_count;
-				}
-
-				write_client
-					.write_with(context.write_line_protocol_with(&payload, &timestamp_ms()))
-					.await?;
-
-				// Update the count
-				context.previous_count = payload.impulse_count.into();
-			}
 			Some(message) = tasmota_rx.recv() => {
 				let Err(error) = swarm.handle_telemetry(message).await else {
 					continue
@@ -145,11 +118,12 @@ async fn main() -> anyhow::Result<()> {
 	drop(swarm);
 	drop(write_client);
 
-	influxdb_task.await??;
-	display_task.await??;
-
 	mqtt_client.disconnect().await?;
 	let _ = handle.await?;
+
+	influxdb_task.await??;
+	display_task.await??;
+	smart_meter_task.await??;
 
 	Ok(())
 }
