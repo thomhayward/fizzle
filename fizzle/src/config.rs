@@ -5,7 +5,7 @@ use url::Url;
 pub struct Config {
 	pub mqtt: MqttConfig,
 	pub influxdb: InfluxConfig,
-	pub display_topic: Option<String>,
+	pub display: Option<DisplayConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -24,4 +24,27 @@ pub struct InfluxConfig {
 	pub token: String,
 	pub org: String,
 	pub read_only: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct DisplayConfig {
+	pub topic: String,
+	#[serde(default)]
+	pub retain: bool,
+
+	pub meter_topic: String,
+	pub meter_device: String,
+
+	#[serde(default = "Vec::new")]
+	pub buttons: Vec<DisplayButtonConfig>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct DisplayButtonConfig {
+	pub topic: String,
+	pub output_topic: String,
+	pub output_payload: Option<String>,
+
+	#[serde(default)]
+	pub retain: bool,
 }
