@@ -10,6 +10,8 @@ use tokio::{
 };
 use yesterday::Record;
 
+use crate::config::Config;
+
 #[derive(Debug, Deserialize)]
 pub struct MeterReading {
 	pub power: u16,
@@ -25,15 +27,15 @@ struct Page {
 
 // const TOPIC: &str = "fizzle/meter-display/page";
 
-pub fn create_task(
+pub fn create_task<'c>(
 	client: Client,
-	query_client: Option<QueryClient>,
-	topic: Option<String>,
+	query_client: QueryClient,
+	config: Arc<Config>,
 	shutdown: watch::Receiver<bool>,
 ) -> JoinHandle<anyhow::Result<()>> {
-	if let Some(topic) = topic {
+	if config.display_topic.is_some() {
 		tracing::info!("starting character display task");
-		tokio::spawn(start_task(client, query_client, topic, shutdown))
+		tokio::spawn(start_task(client, query_client, config, shutdown))
 	} else {
 		tracing::info!("starting dummy character display task");
 		tokio::spawn(async move {
@@ -48,8 +50,8 @@ pub fn create_task(
 
 pub async fn start_task(
 	client: Client,
-	query_client: Option<QueryClient>,
-	topic: String,
+	query_client: QueryClient,
+	config: Arc<Config>,
 	mut shutdown: watch::Receiver<bool>,
 ) -> anyhow::Result<()> {
 	let mut impulses = client.subscribe("meter-reader/impulse", 64).await?;
@@ -58,40 +60,38 @@ pub async fn start_task(
 	let yesterdays_data: Arc<RwLock<Option<(Date, Vec<Record>)>>> = Default::default();
 
 	loop {
-		if let Some(query_client) = query_client.as_ref() {
-			// Determine if we need to fetch yesterday's data.
-			let needs_update = if let Some((date, _)) = *yesterdays_data.read().await {
-				let yesterday = OffsetDateTime::now_local()
+		// Determine if we need to fetch yesterday's data.
+		let needs_update = if let Some((date, _)) = *yesterdays_data.read().await {
+			let yesterday = OffsetDateTime::now_local()
+				.unwrap()
+				.date()
+				.previous_day()
+				.unwrap();
+
+			date < yesterday
+		} else {
+			true
+		};
+
+		if needs_update {
+			let query_client = query_client.clone();
+			let yesterdays_data = Arc::clone(&yesterdays_data);
+
+			tokio::spawn(async move {
+				let date = OffsetDateTime::now_local()
 					.unwrap()
 					.date()
 					.previous_day()
 					.unwrap();
+				tracing::info!("fetching {date}'s energy usage data");
 
-				date < yesterday
-			} else {
-				true
-			};
-
-			if needs_update {
-				let query_client = query_client.clone();
-				let yesterdays_data = Arc::clone(&yesterdays_data);
-
-				tokio::spawn(async move {
-					let date = OffsetDateTime::now_local()
-						.unwrap()
-						.date()
-						.previous_day()
-						.unwrap();
-					tracing::info!("fetching {date}'s energy usage data");
-
-					// Fetch yesterdays's energy usage data.
-					if let Ok(data) =
-						yesterday::fetch(&query_client, date, "fizzle-dev", "garage/meter").await
-					{
-						yesterdays_data.write().await.replace((date, data));
-					}
-				});
-			}
+				// Fetch yesterdays's energy usage data.
+				if let Ok(data) =
+					yesterday::fetch(&query_client, date, "fizzle-dev", "garage/meter").await
+				{
+					yesterdays_data.write().await.replace((date, data));
+				}
+			});
 		}
 		#[rustfmt::skip]
 		tokio::select! {
@@ -131,7 +131,7 @@ pub async fn start_task(
 						);
 
 				tracing::debug!("generated page: {page:?}");
-				client.publish(topic.as_str(), page, QoS::AtMostOnce, true).await?;
+				client.publish(config.display_topic.as_ref().unwrap().as_str(), page, QoS::AtMostOnce, true).await?;
 
 				// tracing::info!("published meter display page to topic '{topic}'");
 			}
@@ -159,7 +159,7 @@ pub async fn start_task(
 		  _ = shutdown.changed() => {
 				tracing::info!("shutting down display task");
 				client.publish(
-					topic.as_str(),
+					config.display_topic.as_ref().unwrap().as_str(),
 					"\n  meter  agent\n    shutdown\n ",
 					QoS::AtMostOnce,
 					true

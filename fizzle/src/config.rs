@@ -2,20 +2,26 @@ use serde::Deserialize;
 use url::Url;
 
 #[derive(Debug, Deserialize)]
-pub struct Config<'a> {
-	pub mqtt: Url,
-
-	#[serde(borrow = "'a")]
-	pub influxdb: Option<InfluxConfig<'a>>,
-
-	pub display_topic: Option<&'a str>,
+pub struct Config {
+	pub mqtt: MqttConfig,
+	pub influxdb: InfluxConfig,
+	pub display_topic: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct InfluxConfig<'a> {
+pub struct MqttConfig {
+	pub host: String,
+	pub port: Option<u16>,
+
+	#[serde(default)]
+	pub tls: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InfluxConfig {
 	pub host: Url,
-	pub bucket: &'a str,
-	pub token: &'a str,
-	pub org: Option<&'a str>,
-	pub org_id: Option<&'a str>,
+	pub bucket: String,
+	pub token: String,
+	pub org: String,
+	pub read_only: bool,
 }
